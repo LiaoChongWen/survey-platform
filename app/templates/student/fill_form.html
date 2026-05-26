@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>{{ form.title }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="/static/css/custom.css">
+  <style>
+    body { background: #f0f4ff; }
+    .form-header { background: linear-gradient(135deg, #0d6efd, #6610f2); color: #fff; padding: 1.5rem 1rem; margin-bottom: 1.5rem; border-radius: 0 0 24px 24px; }
+    .progress-sticky { position: sticky; top: 0; z-index: 10; background: rgba(240,244,255,.95); backdrop-filter: blur(6px); padding: .5rem 1rem; border-bottom: 1px solid #dee2e6; }
+    .scale-btn { min-width: 44px; height: 44px; border: 2px solid #dee2e6; border-radius: 50%; font-weight: 600; background: #fff; transition: all .15s; }
+    .scale-btn.selected { background: #0d6efd; color: #fff; border-color: #0d6efd; }
+  </style>
+</head>
+<body x-data="fillForm()" x-init="init()">
+
+<div class="form-header">
+  <div class="container-sm">
+    <h5 class="fw-bold mb-1">{{ form.title }}</h5>
+    <p class="mb-0 opacity-75 small">{{ form.description }}</p>
+  </div>
+</div>
+
+{% if error %}
+<div class="container-sm">
+  <div class="alert alert-warning text-center py-4">
+    <i class="bi bi-lock fs-2 d-block mb-2"></i>
+    {{ error }}
+  </div>
+</div>
+{% else %}
+
+<div class="progress-sticky">
+  <div class="container-sm d-flex justify-content-between align-items-center">
+    <small class="text-muted">進度：<span x-text="answered"></span> / <span x-text="total"></span></small>
+    <div class="progress flex-fill mx-3" style="height:6px">
+      <div class="progress-bar bg-primary" :style="'width:'+progress+'%'" role="progressbar"></div>
+    </div>
+    <small class="text-muted" x-text="Math.round(progress)+'%'"></small>
+  </div>
+</div>
+
+<div class="container-sm py-2">
+  <!-- Basic info (if not anonymous) -->
+  {% if not form.is_anonymous %}
+  <div class="student-question-card" :class="{'required-missing': submitted && !studentName.trim()}">
+    <h6 class="fw-bold mb-3"><i class="bi bi-person me-2 text-primary"></i>基本資料</h6>
+    <div class="row g-2">
+      <div class="col-6">
+        <label class="form-label small fw-semibold">姓名 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" x-model="studentName" placeholder="請輸入姓名">
+      </div>
+      <div class="col-6">
+        <label class="form-label small fw-semibold">學號</label>
+        <input type="text" class="form-control" x-model="studentId" placeholder="學號">
+      </div>
+      <div class="col-12">
+        <label class="form-label small fw-semibold">班級</label>
+        <input type="text" class="form-control" x-model="studentClass" placeholder="班級">
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Questions -->
+  <template x-for="(q, idx) in questions" :key="q.question_id">
+    <div class="student-question-card" :class="{'required-missing': submitted && q.required && !hasAnswer(q)}">
+      <div class="d-flex align-items-start mb-2">
+        <span class="badge bg-secondary me-2 mt-1" style="font-size:.7rem" x-text="idx+1"></span>
+        <div class="flex-fill">
+          <p class="fw-semibold mb-1" x-text="q.question_text"></p>
+          <div class="d-flex gap-2">
+            <span x-show="q.required" class="badge bg-danger" style="font-size:.65rem">必填</span>
+            <span class="badge" :class="groupColor(q.question_group)" style="font-size:.65rem" x-text="groupLabel(q.question_group)"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Single choice -->
+      <template x-if="q.question_type === 'single'">
+        <div class="mt-2">
+          <template x-for="(opt, oi) in q.options" :key="oi">
+            <button type="button"
+              class="btn btn-choice w-100 mb-2"
+              :class="{ selected: answers[q.question_id] === opt }"
+              @click="setAnswer(q.question_id, opt)">
+              <span class="me-2 fw-bold" x-text="String.fromCharCode(65+oi)+'.'"></span>
+              <span x-text="opt"></span>
+            </button>
+          </template>
+        </div>
+      </template>
+
+      <!-- Multiple choice -->
+      <template x-if="q.question_type === 'multiple'">
+        <div class="mt-2">
+          <template x-for="(opt, oi) in q.options" :key="oi">
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox"
+                :id="q.question_id+'_'+oi"
+                :checked="Array.isArray(answers[q.question_id]) && answers[q.question_id].includes(opt)"
+                @change="toggleMulti(q.question_id, opt, $event.target.checked)">
+              <label class="form-check-label" :for="q.question_id+'_'+oi">
+                <span class="fw-bold me-1" x-text="String.fromCharCode(65+oi)+'.'"></span>
+                <span x-text="opt"></span>
+              </label>
+            </div>
+          </template>
+        </div>
+      </template>
+
+      <!-- Scale -->
+      <template x-if="q.question_type === 'scale'">
+        <div class="mt-3">
+          <div class="d-flex gap-2 flex-wrap justify-content-center">
+            <template x-for="opt in q.options" :key="opt">
+              <button type="button" class="scale-btn"
+                :class="{ selected: answers[q.question_id] == opt }"
+                @click="setAnswer(q.question_id, opt)"
+                x-text="opt"></button>
+            </template>
+          </div>
+          <div class="d-flex justify-content-between mt-1 px-1">
+            <small class="text-muted">非常不同意</small>
+            <small class="text-muted">非常同意</small>
+          </div>
+        </div>
+      </template>
+
+      <!-- Number -->
+      <template x-if="q.question_type === 'number'">
+        <div class="mt-2">
+          <input type="number" class="form-control form-control-lg"
+            :value="answers[q.question_id] || ''"
+            @input="setAnswer(q.question_id, $event.target.value)"
+            placeholder="輸入數值" step="any">
+        </div>
+      </template>
+
+      <!-- Short text -->
+      <template x-if="q.question_type === 'short_text'">
+        <div class="mt-2">
+          <input type="text" class="form-control form-control-lg"
+            :value="answers[q.question_id] || ''"
+            @input="setAnswer(q.question_id, $event.target.value)"
+            placeholder="輸入答案">
+        </div>
+      </template>
+
+      <!-- Essay -->
+      <template x-if="q.question_type === 'essay'">
+        <div class="mt-2">
+          <textarea class="form-control" rows="4"
+            :value="answers[q.question_id] || ''"
+            @input="setAnswer(q.question_id, $event.target.value)"
+            placeholder="請輸入您的心得..."></textarea>
+        </div>
+      </template>
+
+      <!-- Dropdown -->
+      <template x-if="q.question_type === 'dropdown'">
+        <div class="mt-2">
+          <select class="form-select form-select-lg"
+            @change="setAnswer(q.question_id, $event.target.value)">
+            <option value="">── 請選擇 ──</option>
+            <template x-for="opt in q.options" :key="opt">
+              <option :value="opt" :selected="answers[q.question_id] === opt" x-text="opt"></option>
+            </template>
+          </select>
+        </div>
+      </template>
+
+      <!-- Rating (stars) -->
+      <template x-if="q.question_type === 'rating'">
+        <div class="mt-3 text-center">
+          <div class="d-flex gap-1 justify-content-center flex-wrap mb-1">
+            <template x-for="opt in q.options" :key="opt">
+              <button type="button"
+                class="btn p-1 fs-2 lh-1"
+                style="border:none;background:none;transition:transform .1s"
+                :style="Number(answers[q.question_id]) >= Number(opt) ? 'color:#f59e0b' : 'color:#d1d5db'"
+                @click="setAnswer(q.question_id, opt)"
+                @mouseover="$el.style.transform='scale(1.2)'"
+                @mouseout="$el.style.transform='scale(1)'">★</button>
+            </template>
+          </div>
+          <small class="text-muted">
+            <span x-show="answers[q.question_id]" x-text="answers[q.question_id] + ' / ' + q.options.length + ' 星'"></span>
+            <span x-show="!answers[q.question_id]">點選星星給分</span>
+          </small>
+        </div>
+      </template>
+
+      <!-- Date -->
+      <template x-if="q.question_type === 'date'">
+        <div class="mt-2">
+          <input type="date" class="form-control form-control-lg"
+            :value="answers[q.question_id] || ''"
+            @change="setAnswer(q.question_id, $event.target.value)">
+        </div>
+      </template>
+
+      <div x-show="submitted && q.required && !hasAnswer(q)" class="text-danger small mt-2">
+        <i class="bi bi-exclamation-triangle me-1"></i>此為必填題目
+      </div>
+    </div>
+  </template>
+
+  <!-- Submit button -->
+  <div class="text-center pb-5">
+    <div x-show="submitErr" class="alert alert-danger mb-3" x-text="submitErr"></div>
+    <button class="btn btn-primary btn-lg px-5" @click="submitForm" :disabled="submitting">
+      <span x-show="submitting" class="spinner-border spinner-border-sm me-2"></span>
+      <i class="bi bi-send me-2" x-show="!submitting"></i>
+      <span x-text="submitting ? '送出中...' : '確認送出'"></span>
+    </button>
+    <p class="text-muted small mt-2">送出後無法修改</p>
+  </div>
+</div>
+
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/alpine.min.js" defer></script>
+<script>
+const FORM_ID = '{{ form.form_id }}';
+const IS_ANONYMOUS = {{ 'true' if form.is_anonymous else 'false' }};
+const QUESTIONS = {{ questions_json | safe }};
+
+function fillForm() {
+  return {
+    questions: QUESTIONS,
+    answers: {},
+    studentName: '', studentId: '', studentClass: '',
+    submitted: false, submitting: false, submitErr: '',
+
+    get total() { return this.questions.length; },
+    get answered() {
+      return this.questions.filter(q => this.hasAnswer(q)).length;
+    },
+    get progress() {
+      return this.total === 0 ? 0 : (this.answered / this.total * 100);
+    },
+
+    init() {
+      this.questions.forEach(q => { this.answers[q.question_id] = null; });
+    },
+
+    hasAnswer(q) {
+      const v = this.answers[q.question_id];
+      if (v === null || v === undefined || v === '') return false;
+      if (Array.isArray(v)) return v.length > 0;
+      return true;
+    },
+
+    setAnswer(qid, val) {
+      this.answers[qid] = val;
+    },
+
+    toggleMulti(qid, opt, checked) {
+      if (!Array.isArray(this.answers[qid])) this.answers[qid] = [];
+      if (checked) {
+        this.answers[qid] = [...this.answers[qid], opt];
+      } else {
+        this.answers[qid] = this.answers[qid].filter(v => v !== opt);
+      }
+    },
+
+    groupLabel(g) { return {statistics:'統計題', survey:'問卷題', essay:'心得題'}[g] || g; },
+    groupColor(g) { return {statistics:'bg-danger', survey:'bg-primary', essay:'bg-success'}[g] || 'bg-secondary'; },
+
+    async submitForm() {
+      this.submitted = true;
+      this.submitErr = '';
+
+      if (!IS_ANONYMOUS && !this.studentName.trim()) {
+        this.submitErr = '請填寫姓名';
+        return;
+      }
+
+      const missing = this.questions.filter(q => q.required && !this.hasAnswer(q));
+      if (missing.length > 0) {
+        this.submitErr = `還有 ${missing.length} 題必填題目尚未作答`;
+        document.querySelector('.required-missing')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      const answerList = this.questions.map(q => ({
+        question_id: q.question_id,
+        answer_value: this.answers[q.question_id] ?? null,
+      }));
+
+      this.submitting = true;
+      try {
+        const r = await fetch(`/form/${FORM_ID}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_name: this.studentName,
+            student_id: this.studentId,
+            student_class: this.studentClass,
+            answers: answerList,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          let url = `/form/${FORM_ID}/complete`;
+          if (data.show_result && data.total_score !== null) {
+            url += `?score=${data.total_score}`;
+          }
+          window.location.href = url;
+        } else {
+          this.submitErr = data.detail || '送出失敗，請重試';
+        }
+      } catch(e) {
+        this.submitErr = '網路錯誤，請重試';
+      }
+      this.submitting = false;
+    },
+  };
+}
+</script>
+</body>
+</html>

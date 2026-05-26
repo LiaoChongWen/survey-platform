@@ -1,0 +1,103 @@
+:root {
+  --primary: #0d6efd;
+  --card-shadow: 0 2px 12px rgba(0,0,0,.08);
+}
+
+body { background: #f8f9fa; }
+
+.stat-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  transition: transform .15s;
+}
+.stat-card:hover { transform: translateY(-2px); }
+
+.question-card {
+  border: 1px solid #dee2e6;
+  border-radius: 10px;
+  background: #fff;
+  margin-bottom: 1rem;
+}
+.question-card .card-header {
+  background: #f1f3f5;
+  border-radius: 10px 10px 0 0;
+  font-weight: 600;
+}
+
+.form-card {
+  border: none;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  background: #fff;
+}
+
+.student-question-card {
+  border: none;
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(0,0,0,.10);
+  background: #fff;
+  margin-bottom: 1.5rem;
+  padding: 1.5rem;
+}
+
+.student-question-card.required-missing {
+  border: 2px solid #dc3545 !important;
+}
+
+.progress-bar-custom {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.btn-choice {
+  text-align: left;
+  white-space: normal;
+  border: 2px solid #dee2e6;
+  border-radius: 10px;
+  padding: .6rem 1rem;
+  transition: all .15s;
+  background: #fff;
+}
+.btn-choice:hover { border-color: var(--primary); background: #e7f0ff; }
+.btn-choice.selected { border-color: var(--primary); background: #e7f0ff; color: var(--primary); font-weight: 600; }
+
+.badge-status-draft  { background: #6c757d; }
+.badge-status-open   { background: #198754; }
+.badge-status-closed { background: #dc3545; }
+
+.qr-container {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--card-shadow);
+}
+
+.wordcloud-img { max-width: 100%; border-radius: 12px; }
+
+.table-responsive { border-radius: 10px; overflow: hidden; }
+
+.analysis-btn {
+  width: 100%;
+  text-align: left;
+  border-radius: 10px;
+  margin-bottom: .5rem;
+  border: 1.5px solid #dee2e6;
+  background: #fff;
+  font-weight: 500;
+  transition: all .15s;
+}
+.analysis-btn:hover, .analysis-btn.active {
+  border-color: var(--primary);
+  background: #e7f0ff;
+  color: var(--primary);
+}
+
+.chart-container { position: relative; min-height: 300px; }
+
+@media (max-width: 576px) {
+  .student-question-card { padding: 1rem; }
+  .btn-choice { font-size: .95rem; }
+}

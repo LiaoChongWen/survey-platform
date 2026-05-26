@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>填答完成</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <style>
+    body { background: #f0f4ff; min-height: 100vh; display: flex; align-items: center; }
+    .success-card { border: none; border-radius: 20px; box-shadow: 0 8px 32px rgba(0,0,0,.1); padding: 2.5rem; }
+    .check-icon { font-size: 4rem; color: #198754; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="card success-card text-center">
+        <div class="check-icon mb-3">✓</div>
+        <h4 class="fw-bold mb-2">填答完成！</h4>
+        {% if form %}
+        <p class="text-muted mb-3">感謝您完成「{{ form.title }}」的填答</p>
+        {% endif %}
+        {% if score is not none %}
+        <div class="alert alert-success">
+          <div class="fw-bold fs-5">您的得分：{{ score }} 分</div>
+        </div>
+        {% endif %}
+        <p class="text-muted small">您的填答資料已成功送出</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

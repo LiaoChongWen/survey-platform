@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block title %}{{ '編輯問卷' if form else '建立問卷' }} — 問卷分析平台{% endblock %}
+
+{% block content %}
+<div class="container" x-data="formEditor()">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0">
+      <i class="bi bi-{{ 'pencil-square' if form else 'plus-square' }} me-2 text-primary"></i>
+      {{ '編輯問卷' if form else '建立新問卷' }}
+    </h4>
+    <a href="/admin/forms" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>返回列表
+    </a>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="card form-card p-4 sticky-top" style="top:80px">
+        <h6 class="fw-bold mb-3"><i class="bi bi-info-circle me-2"></i>問卷基本設定</h6>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">問卷名稱 <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" x-model="title" placeholder="輸入問卷名稱" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">說明</label>
+          <textarea class="form-control" x-model="description" rows="3" placeholder="填答說明、注意事項"></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">狀態</label>
+          <select class="form-select" x-model="status">
+            <option value="draft">草稿</option>
+            <option value="open">開放填答</option>
+            <option value="closed">關閉</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">開始時間（選填）</label>
+          <input type="datetime-local" class="form-control" x-model="start_time">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">截止時間（選填）</label>
+          <input type="datetime-local" class="form-control" x-model="end_time">
+        </div>
+        <div class="mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" x-model="is_anonymous" id="chkAnon">
+            <label class="form-check-label" for="chkAnon">匿名填答</label>
+          </div>
+          <div class="form-check mt-1">
+            <input class="form-check-input" type="checkbox" x-model="show_result" id="chkResult">
+            <label class="form-check-label" for="chkResult">填答後顯示個人成績</label>
+          </div>
+        </div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary flex-fill" @click="saveForm" :disabled="saving">
+            <span x-show="saving" class="spinner-border spinner-border-sm me-1"></span>
+            <i class="bi bi-save me-1" x-show="!saving"></i>
+            <span x-text="saving ? '儲存中...' : '儲存問卷'"></span>
+          </button>
+        </div>
+        <div x-show="saveMsg" class="alert alert-success mt-2 py-2 text-center" x-text="saveMsg"></div>
+        <div x-show="saveErr" class="alert alert-danger mt-2 py-2 text-center" x-text="saveErr"></div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card form-card p-4 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="fw-bold mb-0"><i class="bi bi-list-ol me-2"></i>題目列表
+            <span class="badge bg-secondary ms-1" x-text="questions.length"></span>
+          </h6>
+          <!-- 遮罩：dropdown 開啟時點外面關閉，z-index 低於選單 -->
+          <div x-show="dropdownOpen" @click="dropdownOpen = false"
+               style="display:none;position:fixed;inset:0;z-index:999" aria-hidden="true"></div>
+          <div class="dropdown" style="position:relative;z-index:1000">
+            <button class="btn btn-success btn-sm" type="button" @click="dropdownOpen = !dropdownOpen">
+              <i class="bi bi-plus-lg me-1"></i>新增題目 <i class="bi bi-chevron-down ms-1 small"></i>
+            </button>
+            <ul class="dropdown-menu" :class="{ show: dropdownOpen }" style="z-index:1001">
+              <li><h6 class="dropdown-header">統計題目</h6></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('single','statistics'); dropdownOpen = false"><i class="bi bi-record-circle me-2"></i>單選題</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('multiple','statistics'); dropdownOpen = false"><i class="bi bi-check2-square me-2"></i>多選題</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('number','statistics'); dropdownOpen = false"><i class="bi bi-123 me-2"></i>數值題</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('short_text','statistics'); dropdownOpen = false"><i class="bi bi-input-cursor-text me-2"></i>簡答題</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><h6 class="dropdown-header">問卷調查</h6></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('single','survey'); dropdownOpen = false"><i class="bi bi-record-circle me-2"></i>單選題</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('multiple','survey'); dropdownOpen = false"><i class="bi bi-check2-square me-2"></i>多選題</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('dropdown','survey'); dropdownOpen = false"><i class="bi bi-menu-button-wide me-2"></i>下拉選單</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('scale','survey'); dropdownOpen = false"><i class="bi bi-sliders me-2"></i>量表題（Likert）</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('rating','survey'); dropdownOpen = false"><i class="bi bi-star-half me-2"></i>評分（星級）</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('number','survey'); dropdownOpen = false"><i class="bi bi-123 me-2"></i>數值填答</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('short_text','survey'); dropdownOpen = false"><i class="bi bi-input-cursor-text me-2"></i>單行文字</button></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('date','survey'); dropdownOpen = false"><i class="bi bi-calendar-date me-2"></i>日期選擇</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><h6 class="dropdown-header">心得題</h6></li>
+              <li><button class="dropdown-item" type="button" @click="addQuestion('essay','essay'); dropdownOpen = false"><i class="bi bi-textarea-t me-2"></i>長文心得</button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div x-show="questions.length === 0" class="text-center text-muted py-4">
+          <i class="bi bi-card-list fs-2 d-block mb-2"></i>點擊「新增題目」開始建立問卷
+        </div>
+
+        <template x-for="(q, idx) in questions" :key="q._key">
+          <div class="question-card">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge" :class="groupBadge(q.question_group)" x-text="groupLabel(q.question_group)"></span>
+                <span class="text-muted small" x-text="typeLabel(q.question_type)"></span>
+                <span class="fw-semibold small">Q<span x-text="idx+1"></span></span>
+              </div>
+              <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-light" @click="moveUp(idx)" :disabled="idx===0" title="上移">
+                  <i class="bi bi-chevron-up"></i>
+                </button>
+                <button class="btn btn-sm btn-light" @click="moveDown(idx)" :disabled="idx===questions.length-1" title="下移">
+                  <i class="bi bi-chevron-down"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" @click="removeQuestion(idx)" title="刪除">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+            <div class="p-3">
+              <div class="mb-3">
+                <label class="form-label fw-semibold small">題目內容 <span class="text-danger">*</span></label>
+                <textarea class="form-control form-control-sm" x-model="q.question_text" rows="2" placeholder="輸入題目..."></textarea>
+              </div>
+
+              <!-- Options for single/multiple/dropdown -->
+              <template x-if="['single','multiple','dropdown'].includes(q.question_type)">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">選項</label>
+                  <template x-for="(opt, oi) in q.options" :key="oi">
+                    <div class="input-group input-group-sm mb-1">
+                      <span class="input-group-text bg-light" x-text="String.fromCharCode(65+oi)"></span>
+                      <input type="text" class="form-control" x-model="q.options[oi]" :placeholder="'選項 '+(oi+1)">
+                      <button class="btn btn-outline-secondary" @click="q.options.splice(oi,1)" type="button">
+                        <i class="bi bi-x"></i>
+                      </button>
+                    </div>
+                  </template>
+                  <button class="btn btn-outline-secondary btn-sm mt-1" @click="q.options.push('')">
+                    <i class="bi bi-plus me-1"></i>新增選項
+                  </button>
+                </div>
+              </template>
+
+              <template x-if="q.question_type === 'scale'">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">量表範圍</label>
+                  <div class="d-flex gap-2 align-items-center">
+                    <input type="number" class="form-control form-control-sm" x-model.number="q._scale_min" style="width:80px" min="1" max="5">
+                    <span>到</span>
+                    <input type="number" class="form-control form-control-sm" x-model.number="q._scale_max" style="width:80px" min="2" max="10">
+                    <span class="text-muted small">分</span>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="q.question_type === 'rating'">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">最高評分</label>
+                  <div class="d-flex gap-2 align-items-center">
+                    <input type="number" class="form-control form-control-sm" x-model.number="q._scale_max" style="width:80px" min="3" max="10">
+                    <span class="text-muted small">顆星（填答者點選 ★ 給分）</span>
+                  </div>
+                  <div class="mt-2 text-warning small">
+                    <template x-for="i in Array.from({length: q._scale_max || 5}, (_, j) => j+1)" :key="i">
+                      <span class="fs-5">★</span>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="q.question_type === 'number' && q.question_group === 'survey'">
+                <div class="mb-3">
+                  <div class="d-flex gap-3 align-items-center">
+                    <div>
+                      <label class="form-label fw-semibold small mb-1">最小值（選填）</label>
+                      <input type="number" class="form-control form-control-sm" x-model="q._num_min" style="width:100px" placeholder="不限">
+                    </div>
+                    <div>
+                      <label class="form-label fw-semibold small mb-1">最大值（選填）</label>
+                      <input type="number" class="form-control form-control-sm" x-model="q._num_max" style="width:100px" placeholder="不限">
+                    </div>
+                  </div>
+                </div>
+              </template>
+
+              <template x-if="q.question_type === 'date'">
+                <div class="mb-3">
+                  <p class="text-muted small mb-1"><i class="bi bi-calendar-date me-1"></i>填答者將看到日期選擇器</p>
+                </div>
+              </template>
+
+              <!-- Correct answer for statistics group -->
+              <template x-if="q.question_group === 'statistics' && ['single','multiple','number','short_text'].includes(q.question_type)">
+                <div class="mb-3">
+                  <label class="form-label fw-semibold small">正確答案</label>
+                  <template x-if="q.question_type === 'single'">
+                    <select class="form-select form-select-sm" x-model="q.correct_answer">
+                      <option value="">（不設定）</option>
+                      <template x-for="(opt, oi) in q.options" :key="oi">
+                        <option :value="opt" x-text="(String.fromCharCode(65+oi)) + '. ' + opt"></option>
+                      </template>
+                    </select>
+                  </template>
+                  <template x-if="q.question_type !== 'single'">
+                    <input type="text" class="form-control form-control-sm" x-model="q.correct_answer" placeholder="輸入正確答案">
+                  </template>
+                  <div class="mt-2 d-flex gap-2 align-items-center">
+                    <label class="form-label fw-semibold small mb-0">配分</label>
+                    <input type="number" class="form-control form-control-sm" x-model.number="q.score" style="width:80px" min="0" step="0.5">
+                    <label class="form-label fw-semibold small mb-0 ms-2">解析說明</label>
+                    <input type="text" class="form-control form-control-sm" x-model="q.explanation" placeholder="選填">
+                  </div>
+                </div>
+              </template>
+
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" :id="'req_'+q._key" x-model="q.required">
+                <label class="form-check-label small" :for="'req_'+q._key">必填</label>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const FORM_ID = {{ form.form_id | tojson if form else 'null' }};
+const INITIAL_QUESTIONS = {{ questions_json | safe }};
+
+function formEditor() {
+  return {
+    title: {{ form.title | tojson if form else '""' }},
+    description: {{ form.description | tojson if form else '""' }},
+    status: {{ form.status | tojson if form else '"draft"' }},
+    start_time: '',
+    end_time: '',
+    is_anonymous: {{ 'true' if form and form.is_anonymous else 'false' }},
+    show_result: {{ 'true' if form and form.show_result else 'false' }},
+    questions: [],
+    saving: false,
+    saveMsg: '',
+    saveErr: '',
+    _keyCounter: 0,
+    dropdownOpen: false,
+
+    init() {
+      this.questions = INITIAL_QUESTIONS.map(q => ({
+        ...q,
+        _key: this._keyCounter++,
+        _scale_min: q._scale_min || 1,
+        _scale_max: q._scale_max || (q.question_type === 'rating' ? 5 : 5),
+        _num_min: '',
+        _num_max: '',
+        correct_answer: q.correct_answer === null ? '' : (typeof q.correct_answer === 'object' ? JSON.stringify(q.correct_answer) : String(q.correct_answer)),
+      }));
+      {% if form and form.start_time %}
+      this.start_time = '{{ form.start_time.strftime("%Y-%m-%dT%H:%M") }}';
+      {% endif %}
+      {% if form and form.end_time %}
+      this.end_time = '{{ form.end_time.strftime("%Y-%m-%dT%H:%M") }}';
+      {% endif %}
+    },
+
+    addQuestion(type, group) {
+      this.questions = [...this.questions, {
+        _key: this._keyCounter++,
+        question_type: type,
+        question_group: group,
+        question_text: '',
+        options: ['single', 'multiple', 'dropdown'].includes(type) ? ['', ''] : [],
+        correct_answer: '',
+        score: 1,
+        required: true,
+        order_index: this.questions.length,
+        explanation: '',
+        _scale_min: 1,
+        _scale_max: type === 'rating' ? 5 : 5,
+        _num_min: '',
+        _num_max: '',
+      }];
+    },
+
+    removeQuestion(idx) {
+      this.questions = this.questions.filter((_, i) => i !== idx);
+    },
+
+    moveUp(idx) {
+      if (idx === 0) return;
+      const q = [...this.questions];
+      [q[idx - 1], q[idx]] = [q[idx], q[idx - 1]];
+      this.questions = q;
+    },
+
+    moveDown(idx) {
+      if (idx === this.questions.length - 1) return;
+      const q = [...this.questions];
+      [q[idx], q[idx + 1]] = [q[idx + 1], q[idx]];
+      this.questions = q;
+    },
+
+    groupLabel(g) {
+      return { statistics: '統計題', survey: '問卷題', essay: '心得題' }[g] || g;
+    },
+    groupBadge(g) {
+      return { statistics: 'bg-danger', survey: 'bg-primary', essay: 'bg-success' }[g] || 'bg-secondary';
+    },
+    typeLabel(t) {
+      return {
+        single:'單選', multiple:'多選', scale:'量表',
+        number:'數值', short_text:'簡答', essay:'長文心得',
+        dropdown:'下拉選單', rating:'評分', date:'日期'
+      }[t] || t;
+    },
+
+    buildPayload() {
+      const qs = this.questions.map((q, idx) => {
+        let opts = [...(q.options || [])];
+        let ca = q.correct_answer;
+
+        if (q.question_type === 'scale') {
+          const min = q._scale_min || 1;
+          const max = q._scale_max || 5;
+          opts = Array.from({length: max - min + 1}, (_, i) => String(min + i));
+          ca = null;
+        }
+        if (q.question_type === 'rating') {
+          const max = q._scale_max || 5;
+          opts = Array.from({length: max}, (_, i) => String(i + 1));
+          ca = null;
+        }
+        if (q.question_type === 'date' || q.question_type === 'short_text' && q.question_group === 'survey') {
+          opts = [];
+          ca = null;
+        }
+
+        let caVal = ca === '' ? null : ca;
+        if (q.question_type === 'multiple' && ca && typeof ca === 'string' && ca.includes(',')) {
+          caVal = ca.split(',').map(v => v.trim());
+        }
+        if (q.question_type === 'number' && ca !== '') {
+          caVal = parseFloat(ca) || ca;
+        }
+
+        return {
+          question_id: q.question_id || null,
+          question_type: q.question_type,
+          question_group: q.question_group,
+          question_text: q.question_text,
+          options: opts.filter(o => o !== ''),
+          correct_answer: caVal,
+          score: q.score || 0,
+          required: q.required,
+          order_index: idx,
+          explanation: q.explanation || '',
+        };
+      });
+      return {
+        title: this.title,
+        description: this.description,
+        status: this.status,
+        start_time: this.start_time || null,
+        end_time: this.end_time || null,
+        is_anonymous: this.is_anonymous,
+        show_result: this.show_result,
+        questions: qs,
+      };
+    },
+
+    async saveForm() {
+      this.saveMsg = '';
+      this.saveErr = '';
+      if (!this.title.trim()) { this.saveErr = '請填寫問卷名稱'; return; }
+      this.saving = true;
+      const method = FORM_ID ? 'PUT' : 'POST';
+      const url = FORM_ID ? `/api/forms/${FORM_ID}` : '/api/forms';
+      try {
+        const r = await fetch(url, {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.buildPayload()),
+        });
+        const data = await r.json();
+        if (r.ok) {
+          this.saveMsg = '儲存成功！';
+          if (!FORM_ID && data.form_id) {
+            setTimeout(() => { window.location.href = `/admin/forms/${data.form_id}/edit`; }, 800);
+          }
+        } else {
+          this.saveErr = data.detail || '儲存失敗';
+        }
+      } catch(e) {
+        this.saveErr = '網路錯誤：' + e.message;
+      }
+      this.saving = false;
+    },
+  };
+}
+</script>
+{% endblock %}

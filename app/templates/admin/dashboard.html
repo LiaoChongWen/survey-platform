@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}儀表板 — 問卷分析平台{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>儀表板</h4>
+    <div class="d-flex gap-2">
+      <a href="/admin/forms/create" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-lg me-1"></i>新增問卷
+      </a>
+      <a href="/admin/analysis" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-upload me-1"></i>上傳資料
+      </a>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-sm-4">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center">
+          <div class="rounded-circle bg-primary bg-opacity-10 p-3 me-3">
+            <i class="bi bi-file-earmark-text text-primary fs-4"></i>
+          </div>
+          <div>
+            <div class="text-muted small">問卷總數</div>
+            <div class="fs-3 fw-bold">{{ total_forms }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center">
+          <div class="rounded-circle bg-success bg-opacity-10 p-3 me-3">
+            <i class="bi bi-broadcast text-success fs-4"></i>
+          </div>
+          <div>
+            <div class="text-muted small">進行中問卷</div>
+            <div class="fs-3 fw-bold text-success">{{ open_forms }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-sm-4">
+      <div class="card stat-card p-3">
+        <div class="d-flex align-items-center">
+          <div class="rounded-circle bg-info bg-opacity-10 p-3 me-3">
+            <i class="bi bi-people text-info fs-4"></i>
+          </div>
+          <div>
+            <div class="text-muted small">總填答人數</div>
+            <div class="fs-3 fw-bold text-info">{{ total_responses }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card form-card p-4">
+    <h6 class="fw-bold mb-3"><i class="bi bi-clock-history me-2"></i>最近問卷</h6>
+    {% if recent_forms %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>問卷名稱</th>
+            <th>狀態</th>
+            <th>建立時間</th>
+            <th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in recent_forms %}
+          <tr>
+            <td class="fw-semibold">{{ f.title }}</td>
+            <td>
+              <span class="badge badge-status-{{ f.status }}">
+                {% if f.status == 'draft' %}草稿
+                {% elif f.status == 'open' %}開放中
+                {% else %}已關閉{% endif %}
+              </span>
+            </td>
+            <td class="text-muted small">{{ f.created_at.strftime('%Y-%m-%d %H:%M') if f.created_at else '' }}</td>
+            <td>
+              <a href="/admin/forms/{{ f.form_id }}/results" class="btn btn-sm btn-outline-primary me-1">
+                <i class="bi bi-bar-chart-line"></i>
+              </a>
+              <a href="/admin/forms/{{ f.form_id }}/qrcode" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-qr-code"></i>
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-inbox fs-2 d-block mb-2"></i>
+      尚未建立任何問卷，<a href="/admin/forms/create">立即建立</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

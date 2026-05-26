@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}問卷管理 — 問卷分析平台{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-file-earmark-text me-2 text-primary"></i>問卷管理</h4>
+    <a href="/admin/forms/create" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>新增問卷
+    </a>
+  </div>
+
+  {% if forms %}
+  <div class="row g-3">
+    {% for f in forms %}
+    <div class="col-md-6 col-lg-4">
+      <div class="card form-card h-100 p-3">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <span class="badge badge-status-{{ f.status }}">
+            {% if f.status == 'draft' %}草稿
+            {% elif f.status == 'open' %}開放中
+            {% else %}已關閉{% endif %}
+          </span>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-light" data-bs-toggle="dropdown">
+              <i class="bi bi-three-dots-vertical"></i>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="/admin/forms/{{ f.form_id }}/edit">
+                <i class="bi bi-pencil me-2"></i>編輯</a></li>
+              <li><a class="dropdown-item" href="/admin/forms/{{ f.form_id }}/qrcode">
+                <i class="bi bi-qr-code me-2"></i>QR Code</a></li>
+              <li><a class="dropdown-item" href="/admin/forms/{{ f.form_id }}/results">
+                <i class="bi bi-bar-chart-line me-2"></i>統計結果</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li>
+                {% if f.status != 'open' %}
+                <button class="dropdown-item text-success" onclick="toggleStatus('{{ f.form_id }}', 'open')">
+                  <i class="bi bi-broadcast me-2"></i>開放問卷
+                </button>
+                {% else %}
+                <button class="dropdown-item text-warning" onclick="toggleStatus('{{ f.form_id }}', 'closed')">
+                  <i class="bi bi-stop-circle me-2"></i>關閉問卷
+                </button>
+                {% endif %}
+              </li>
+              <li>
+                <button class="dropdown-item text-danger" onclick="deleteForm('{{ f.form_id }}', '{{ f.title }}')">
+                  <i class="bi bi-trash me-2"></i>刪除
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <h6 class="fw-bold mb-1">{{ f.title }}</h6>
+        <p class="text-muted small mb-2">{{ f.description[:60] + '...' if f.description and f.description|length > 60 else f.description }}</p>
+        <div class="d-flex justify-content-between align-items-center mt-auto pt-2 border-top">
+          <span class="text-muted small">
+            <i class="bi bi-people me-1"></i>{{ f.responses|length }} 份填答
+          </span>
+          <span class="text-muted small">
+            {{ f.created_at.strftime('%m/%d') if f.created_at else '' }}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card form-card p-5 text-center">
+    <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+    <p class="text-muted">尚未建立任何問卷</p>
+    <a href="/admin/forms/create" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i>建立第一份問卷
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function toggleStatus(formId, status) {
+  const labels = { open: '開放', closed: '關閉', draft: '設為草稿' };
+  if (!confirm(`確定要${labels[status]}此問卷？`)) return;
+  const r = await fetch(`/api/forms/${formId}/toggle`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status })
+  });
+  if (r.ok) location.reload();
+  else alert('操作失敗');
+}
+
+async function deleteForm(formId, title) {
+  if (!confirm(`確定要刪除「${title}」？此操作無法復原。`)) return;
+  const r = await fetch(`/api/forms/${formId}`, { method: 'DELETE' });
+  if (r.ok) location.reload();
+  else alert('刪除失敗');
+}
+</script>
+{% endblock %}

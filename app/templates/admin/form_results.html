@@ -1,0 +1,352 @@
+{% extends "base.html" %}
+{% block title %}統計結果 — {{ form.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="fw-bold mb-0"><i class="bi bi-bar-chart-line me-2 text-primary"></i>{{ form.title }}</h4>
+      <span class="text-muted small">共 {{ response_count }} 份填答</span>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+      <a href="/admin/forms/{{ form.form_id }}/qrcode" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-qr-code me-1"></i>QR Code
+      </a>
+      <a href="/api/forms/{{ form.form_id }}/export/csv" class="btn btn-outline-success btn-sm">
+        <i class="bi bi-filetype-csv me-1"></i>匯出 CSV
+      </a>
+      <a href="/api/forms/{{ form.form_id }}/export/excel" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-file-earmark-excel me-1"></i>匯出 Excel
+      </a>
+      {% if linked_dataset %}
+      <a href="/admin/analysis/{{ linked_dataset.dataset_id }}" class="btn btn-info btn-sm">
+        <i class="bi bi-graph-up-arrow me-1"></i>查看資料分析
+      </a>
+      <button class="btn btn-outline-info btn-sm" onclick="importToAnalysis('{{ form.form_id }}', true)">
+        <i class="bi bi-arrow-clockwise me-1"></i>更新分析資料
+      </button>
+      {% else %}
+      <button class="btn btn-outline-info btn-sm" onclick="importToAnalysis('{{ form.form_id }}', false)">
+        <i class="bi bi-graph-up-arrow me-1"></i>匯入資料分析
+      </button>
+      {% endif %}
+      <a href="/admin/forms" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>返回
+      </a>
+    </div>
+  </div>
+
+  <!-- Loading -->
+  <div id="loadingBlock" class="text-center py-5">
+    <div class="spinner-border text-primary" role="status"></div>
+    <p class="text-muted mt-2">載入統計資料...</p>
+  </div>
+
+  <div id="resultBlock" style="display:none">
+    <!-- Section 1: Score distribution -->
+    <div id="statsSection" style="display:none">
+      <h5 class="fw-bold mb-3"><i class="bi bi-trophy me-2 text-warning"></i>統計題目成績分析</h5>
+      <div class="row g-3 mb-4" id="scoreSummary"></div>
+      <div class="row g-3 mb-4">
+        <div class="col-md-7">
+          <div class="card form-card p-3">
+            <h6 class="fw-semibold mb-2">成績分布</h6>
+            <div class="chart-container"><canvas id="scoreChart"></canvas></div>
+          </div>
+        </div>
+        <div class="col-md-5">
+          <div class="card form-card p-3">
+            <h6 class="fw-semibold mb-2">各題答對率</h6>
+            <div class="chart-container"><canvas id="correctRateChart"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 2: Survey question stats -->
+    <div id="surveySection">
+      <h5 class="fw-bold mb-3"><i class="bi bi-clipboard-data me-2 text-info"></i>問卷調查結果</h5>
+      <div id="surveyCharts" class="row g-3 mb-4"></div>
+    </div>
+
+    <!-- Section 3: Word cloud -->
+    <div id="essaySection" style="display:none">
+      <h5 class="fw-bold mb-3"><i class="bi bi-cloud me-2 text-success"></i>心得文字分析</h5>
+      <div class="row g-3 mb-4">
+        <div class="col-md-8">
+          <div class="card form-card p-3 text-center">
+            <h6 class="fw-semibold mb-2">文字雲</h6>
+            <div id="wcLoading" class="py-3">
+              <div class="spinner-border spinner-border-sm text-secondary"></div>
+              <span class="ms-2 text-muted small">生成文字雲...</span>
+            </div>
+            <img id="wcImg" class="wordcloud-img" style="display:none">
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card form-card p-3">
+            <h6 class="fw-semibold mb-2">高頻關鍵字</h6>
+            <div id="topWords"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Section 4: Raw data table -->
+    <h5 class="fw-bold mb-3"><i class="bi bi-table me-2 text-secondary"></i>原始填答資料</h5>
+    <div class="card form-card p-3 mb-4">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle" id="responseTable">
+          <thead class="table-light" id="tableHead"></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+        <p id="noDataMsg" class="text-center text-muted py-3" style="display:none">尚無填答資料</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const FORM_ID = '{{ form.form_id }}';
+let statsData = null;
+let chartInstances = [];
+
+function destroyCharts() {
+  chartInstances.forEach(c => c.destroy());
+  chartInstances = [];
+}
+
+async function loadStats() {
+  try {
+    const [statsRes, tableRes] = await Promise.all([
+      fetch(`/api/forms/${FORM_ID}/stats`),
+      fetch(`/api/forms/${FORM_ID}/responses-table`),
+    ]);
+    statsData = await statsRes.json();
+    const tableData = await tableRes.json();
+
+    document.getElementById('loadingBlock').style.display = 'none';
+    document.getElementById('resultBlock').style.display = '';
+
+    renderScoreSection(statsData.score_distribution, statsData.question_correct_rates);
+    renderSurveySection(statsData.survey_stats);
+    renderTable(tableData);
+  } catch(e) {
+    document.getElementById('loadingBlock').innerHTML = '<div class="alert alert-danger">載入失敗：' + e.message + '</div>';
+  }
+}
+
+function renderScoreSection(dist, rates) {
+  if (!dist || dist.count === 0) return;
+  document.getElementById('statsSection').style.display = '';
+
+  const summary = document.getElementById('scoreSummary');
+  summary.innerHTML = [
+    { label: '填答人數', val: dist.count, icon: 'people', color: 'primary' },
+    { label: '平均分數', val: dist.avg, icon: 'graph-up', color: 'success' },
+    { label: '標準差', val: dist.std, icon: 'distribute-vertical', color: 'info' },
+    { label: '最高/最低', val: `${dist.max} / ${dist.min}`, icon: 'arrow-up-down', color: 'warning' },
+  ].map(s => `
+    <div class="col-6 col-md-3">
+      <div class="card stat-card p-3 text-center">
+        <i class="bi bi-${s.icon} fs-4 text-${s.color} mb-1"></i>
+        <div class="fw-bold fs-5">${s.val}</div>
+        <div class="text-muted small">${s.label}</div>
+      </div>
+    </div>`).join('');
+
+  const ctx1 = document.getElementById('scoreChart').getContext('2d');
+  chartInstances.push(new Chart(ctx1, {
+    type: 'bar',
+    data: { labels: dist.labels, datasets: [{ label: '人數', data: dist.data, backgroundColor: '#0d6efd99', borderColor: '#0d6efd', borderWidth: 1 }] },
+    options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+  }));
+
+  if (rates && rates.length > 0) {
+    const ctx2 = document.getElementById('correctRateChart').getContext('2d');
+    chartInstances.push(new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels: rates.map(r => r.question_text),
+        datasets: [
+          { label: '答對率%', data: rates.map(r => r.correct_rate), backgroundColor: '#19875499' },
+          { label: '錯誤率%', data: rates.map(r => r.wrong_rate), backgroundColor: '#dc354599' },
+        ]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'top' } }, scales: { x: { stacked: true }, y: { stacked: true, max: 100 } } }
+    }));
+  }
+}
+
+function renderSurveySection(surveyStats) {
+  const container = document.getElementById('surveyCharts');
+  if (!surveyStats || surveyStats.length === 0) {
+    container.innerHTML = '<div class="col-12 text-center text-muted py-3">尚無問卷調查資料</div>';
+    return;
+  }
+  const COLORS = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#20c997','#fd7e14','#6c757d'];
+  const TYPE_LABEL = {
+    single:'單選題', multiple:'多選題', scale:'量表題', dropdown:'下拉選單',
+    rating:'評分題', number_stat:'數值填答', short_text:'單行文字', date:'日期選擇'
+  };
+
+  surveyStats.forEach((q, i) => {
+    const col = document.createElement('div');
+    const typeTag = TYPE_LABEL[q.question_type] || q.question_type;
+
+    // 數值統計型：不需圖表，顯示數字卡片
+    if (q.question_type === 'number_stat') {
+      col.className = 'col-md-6';
+      col.innerHTML = `
+        <div class="card form-card p-3">
+          <h6 class="fw-semibold mb-1 small">${q.question_text}</h6>
+          <span class="badge bg-secondary mb-2" style="font-size:.65rem">${typeTag}</span>
+          <p class="text-muted small mb-2">共 ${q.total} 份回答</p>
+          <div class="row g-2 text-center">
+            <div class="col-4"><div class="border rounded p-2"><div class="fw-bold fs-5 text-primary">${q.avg}</div><div class="text-muted" style="font-size:.7rem">平均值</div></div></div>
+            <div class="col-4"><div class="border rounded p-2"><div class="fw-bold fs-5 text-success">${q.min_val}</div><div class="text-muted" style="font-size:.7rem">最小值</div></div></div>
+            <div class="col-4"><div class="border rounded p-2"><div class="fw-bold fs-5 text-danger">${q.max_val}</div><div class="text-muted" style="font-size:.7rem">最大值</div></div></div>
+          </div>
+        </div>`;
+      container.appendChild(col);
+      return;
+    }
+
+    // 有圖表的類型
+    const canvasId = `surveyChart_${i}`;
+    const isPie = q.question_type === 'single' || q.question_type === 'dropdown';
+    const avgText = q.avg !== undefined ? ` | 平均 ${q.avg} ${q.question_type === 'rating' ? '★' : '分'}` : '';
+    const isShortText = q.question_type === 'short_text';
+    const wcId = `wc_${q.question_id}`;
+    const wcHtml = isShortText ? `
+      <div id="${wcId}_loading" class="text-center py-2 mt-2">
+        <div class="spinner-border spinner-border-sm text-secondary"></div>
+        <span class="ms-1 text-muted small">生成文字雲...</span>
+      </div>
+      <img id="${wcId}_img" class="img-fluid mt-1 rounded" style="display:none">` : '';
+    col.className = 'col-md-6';
+    col.innerHTML = `
+      <div class="card form-card p-3">
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <h6 class="fw-semibold small mb-0">${q.question_text}</h6>
+          <span class="badge bg-secondary ms-2 flex-shrink-0" style="font-size:.65rem">${typeTag}</span>
+        </div>
+        <p class="text-muted small mb-1">共 ${q.total} 份回答${avgText}</p>
+        <div class="chart-container" style="min-height:200px"><canvas id="${canvasId}"></canvas></div>
+        ${wcHtml}
+      </div>`;
+    container.appendChild(col);
+
+    if (isShortText) {
+      loadQuestionWordCloud(q.question_id, wcId);
+    }
+
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    const chartType = isPie ? 'pie' : 'bar';
+    chartInstances.push(new Chart(ctx, {
+      type: chartType,
+      data: {
+        labels: q.labels,
+        datasets: [{
+          label: '人數',
+          data: q.data,
+          backgroundColor: q.labels.map((_, j) => COLORS[j % COLORS.length] + '99'),
+          borderColor: q.labels.map((_, j) => COLORS[j % COLORS.length]),
+          borderWidth: 1,
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: isPie ? 'right' : 'top', labels: { boxWidth: 12 } } },
+        scales: isPie ? {} : { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+      }
+    }));
+  });
+}
+
+function renderTable(tableData) {
+  const head = document.getElementById('tableHead');
+  const body = document.getElementById('tableBody');
+  if (!tableData.rows || tableData.rows.length === 0) {
+    document.getElementById('noDataMsg').style.display = '';
+    return;
+  }
+  head.innerHTML = '<tr>' + tableData.headers.slice(0,8).map(h => `<th class="small">${h}</th>`).join('') + (tableData.headers.length > 8 ? `<th class="small">...+${tableData.headers.length-8}欄</th>` : '') + '</tr>';
+  body.innerHTML = tableData.rows.map(row => {
+    const keys = tableData.header_keys.slice(0, 8);
+    return '<tr>' + keys.map(k => `<td class="small">${row[k] ?? ''}</td>`).join('') + (tableData.header_keys.length > 8 ? '<td class="text-muted small">...</td>' : '') + '</tr>';
+  }).join('');
+}
+
+async function loadQuestionWordCloud(questionId, wcId) {
+  try {
+    const r = await fetch(`/api/forms/${FORM_ID}/question/${questionId}/wordcloud`);
+    const data = await r.json();
+    const loadingEl = document.getElementById(`${wcId}_loading`);
+    if (loadingEl) loadingEl.style.display = 'none';
+    if (data.image_b64) {
+      const img = document.getElementById(`${wcId}_img`);
+      if (img) {
+        img.src = 'data:image/png;base64,' + data.image_b64;
+        img.style.display = '';
+      }
+    }
+  } catch(e) {
+    const loadingEl = document.getElementById(`${wcId}_loading`);
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+}
+
+async function loadWordCloud() {
+  const r = await fetch(`/api/forms/${FORM_ID}/wordcloud`);
+  const data = await r.json();
+  document.getElementById('wcLoading').style.display = 'none';
+  if (data.image_b64) {
+    document.getElementById('essaySection').style.display = '';
+    const img = document.getElementById('wcImg');
+    img.src = 'data:image/png;base64,' + data.image_b64;
+    img.style.display = '';
+    const topWordsEl = document.getElementById('topWords');
+    topWordsEl.innerHTML = data.top_words.slice(0,15).map((w, i) =>
+      `<div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small">${i+1}. ${w.word}</span>
+        <span class="badge bg-secondary">${w.count}</span>
+      </div>`
+    ).join('');
+  }
+}
+
+loadStats().then(() => loadWordCloud());
+
+async function importToAnalysis(formId, isUpdate) {
+  const btn = event.target.closest('button');
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${isUpdate ? '更新中...' : '匯入中...'}`;
+  try {
+    const r = await fetch(`/api/forms/${formId}/import-as-dataset`, { method: 'POST' });
+    const data = await r.json();
+    if (r.ok) {
+      const msg = data.is_update
+        ? `已更新「${data.dataset_name}」，前往查看分析？`
+        : `已匯入「${data.dataset_name}」，前往資料分析頁面？`;
+      if (confirm(msg)) {
+        window.location.href = `/admin/analysis/${data.dataset_id}`;
+      } else {
+        window.location.reload();
+      }
+    } else {
+      alert(data.detail || '操作失敗');
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  } catch(e) {
+    alert('網路錯誤：' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
+  }
+}
+</script>
+{% endblock %}

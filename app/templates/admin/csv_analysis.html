@@ -1,0 +1,373 @@
+{% extends "base.html" %}
+{% block title %}CSV 資料分析 — 問卷分析平台{% endblock %}
+
+{% block content %}
+<div class="container-fluid" x-data="csvAnalysis()">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-upload me-2 text-primary"></i>CSV 資料分析</h4>
+    <label class="btn btn-primary btn-sm mb-0">
+      <i class="bi bi-file-earmark-arrow-up me-1"></i>上傳 CSV
+      <input type="file" accept=".csv" style="display:none" @change="uploadCSV($event)">
+    </label>
+  </div>
+
+  <div x-show="uploading" class="alert alert-info py-2">
+    <div class="spinner-border spinner-border-sm me-2"></div>正在上傳並解析...
+  </div>
+  <div x-show="uploadErr" class="alert alert-danger py-2" x-text="uploadErr"></div>
+
+  {% if datasets %}
+  <div class="card form-card p-2 mb-3">
+    <div class="d-flex gap-2 flex-wrap">
+      {% for ds in datasets %}
+      <a href="/admin/analysis/{{ ds.dataset_id }}"
+         class="btn btn-sm {% if current_dataset and current_dataset.dataset_id == ds.dataset_id %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+        <i class="bi bi-table me-1"></i>{{ ds.dataset_name }}
+        <span class="badge bg-light text-dark ms-1">{{ ds.row_count }}筆</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if current_dataset %}
+  <!-- 上方：資料預覽 + 分析設定 並排 -->
+  <div class="row g-3 mb-3">
+    <!-- 左：資料預覽 -->
+    <div class="col-lg-7">
+      <div class="card form-card p-3 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="fw-bold mb-0">
+            <i class="bi bi-table me-1"></i>{{ current_dataset.dataset_name }}
+            <span class="text-muted small ms-2">{{ current_dataset.row_count }} 筆 × {{ current_dataset.column_count }} 欄</span>
+          </h6>
+          <button class="btn btn-outline-danger btn-sm"
+                  onclick="if(confirm('確定刪除此資料集？'))deleteDataset('{{ current_dataset.dataset_id }}')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+
+        <div class="d-flex flex-wrap gap-1 mb-1">
+          {% for col in column_info %}
+          <span class="badge {% if col.type == 'numeric' %}bg-primary{% elif col.type == 'categorical' %}bg-warning text-dark{% else %}bg-secondary{% endif %}"
+                style="cursor:pointer; font-size:.75rem"
+                @click="selectColumn('{{ col.name }}')"
+                title="點擊選為 X 軸 | {{ col.type }} | 缺漏: {{ col.missing }}">
+            {{ col.name }}
+            <span class="ms-1">{% if col.type == 'numeric' %}#{% elif col.type == 'categorical' %}A{% else %}T{% endif %}</span>
+          </span>
+          {% endfor %}
+        </div>
+        <p class="text-muted mb-2" style="font-size:.72rem">點欄位名稱快速選 X 軸 ｜ <span class="badge bg-primary">#</span>數值 <span class="badge bg-warning text-dark">A</span>類別 <span class="badge bg-secondary">T</span>文字</p>
+
+        <div class="table-responsive" style="max-height:340px; overflow-y:auto;">
+          <div id="previewLoading" class="text-center py-3">
+            <div class="spinner-border spinner-border-sm text-secondary"></div>
+          </div>
+          <table class="table table-sm table-bordered align-middle small mb-0" id="previewTable" style="display:none">
+            <thead class="table-light sticky-top" id="previewHead"></thead>
+            <tbody id="previewBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右：分析設定 -->
+    <div class="col-lg-5">
+      <div class="card form-card p-3 h-100">
+        <h6 class="fw-bold mb-3"><i class="bi bi-sliders me-1"></i>分析設定</h6>
+
+        <div class="mb-2">
+          <label class="form-label small fw-semibold">X 軸變數 <span class="text-danger">*</span></label>
+          <select class="form-select form-select-sm" x-model="xCol">
+            <option value="">請選擇...</option>
+            {% for col in column_info %}
+            <option value="{{ col.name }}">{{ col.name }} ({{ col.type }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Y 軸變數（散布圖／交叉表需要）</label>
+          <select class="form-select form-select-sm" x-model="yCol">
+            <option value="">不選擇</option>
+            {% for col in column_info %}
+            <option value="{{ col.name }}">{{ col.name }} ({{ col.type }})</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <label class="form-label small fw-semibold">分析功能</label>
+        <div class="row g-1 mb-3">
+          {% set btns = [
+            ('pie', 'pie-chart', '圓餅圖', '單一類別'),
+            ('bar', 'bar-chart', '長條圖', '類別/數值'),
+            ('scatter', 'graph-up', '散布圖', '雙數值'),
+            ('mean', 'calculator', '平均數', '單一數值'),
+            ('variance', 'distribute-vertical', '變異數', '單一數值'),
+            ('std', 'activity', '標準差', '單一數值'),
+            ('crosstab', 'grid-3x3', '交叉表', '雙類別'),
+            ('correlation', 'link-45deg', '相關係數', '雙數值'),
+            ('wordcloud', 'cloud', '文字雲', '文字欄位'),
+          ] %}
+          {% for (type, icon, label, hint) in btns %}
+          <div class="col-6">
+            <button class="analysis-btn btn btn-sm" :class="{active: chartType==='{{ type }}'}"
+                    @click="chartType='{{ type }}'" title="{{ hint }}">
+              <i class="bi bi-{{ icon }} me-1"></i>{{ label }}
+              <span class="text-muted d-block" style="font-size:.7rem">{{ hint }}</span>
+            </button>
+          </div>
+          {% endfor %}
+        </div>
+
+        <button class="btn btn-primary w-100" @click="runAnalysis" :disabled="!xCol || !chartType || analyzing">
+          <span x-show="analyzing" class="spinner-border spinner-border-sm me-1"></span>
+          <i class="bi bi-play-fill me-1" x-show="!analyzing"></i>
+          <span x-text="analyzing ? '分析中...' : '執行分析'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 下方：圖表結果（全寬） -->
+  <div class="card form-card p-4" id="resultCard" style="display:none">
+    <div id="resultErr" class="alert alert-danger py-2 mb-0" style="display:none"></div>
+    <div id="chartSection" style="display:none">
+      <h6 class="fw-semibold mb-3" id="chartTitle"></h6>
+      <div style="position:relative; height:420px; max-width:960px; margin:0 auto;">
+        <canvas id="analysisChart"></canvas>
+      </div>
+    </div>
+    <div id="statSection" class="text-center py-4" style="display:none">
+      <div class="display-4 fw-bold text-primary" id="statValue"></div>
+      <div class="text-muted mt-2 fs-6" id="statLabel"></div>
+    </div>
+    <div id="crosstabSection" style="display:none">
+      <h6 class="fw-semibold mb-3" id="crosstabTitle"></h6>
+      <div class="table-responsive" id="crosstabContainer"></div>
+    </div>
+    <div id="wordcloudSection" style="display:none">
+      <h6 class="fw-semibold mb-3" id="wordcloudTitle"></h6>
+      <div class="row g-3">
+        <div class="col-md-8 text-center">
+          <img id="wordcloudImg" class="img-fluid rounded" style="max-height:400px">
+        </div>
+        <div class="col-md-4">
+          <h6 class="small fw-semibold mb-2">高頻關鍵字</h6>
+          <div id="wordcloudTopWords"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="card form-card p-5 text-center">
+    <i class="bi bi-file-earmark-bar-graph fs-1 text-muted d-block mb-3"></i>
+    <p class="text-muted">請上傳 CSV 檔案，或從問卷結果頁匯入填答資料</p>
+    <label class="btn btn-primary">
+      <i class="bi bi-upload me-1"></i>選擇 CSV 檔案
+      <input type="file" accept=".csv" style="display:none" @change="uploadCSV($event)">
+    </label>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const DATASET_ID = '{{ current_dataset.dataset_id if current_dataset else '' }}'  || null;
+let analysisChart = null;
+
+function showResult(data, errMsg) {
+  const card = document.getElementById('resultCard');
+  const errEl = document.getElementById('resultErr');
+  const chartSec = document.getElementById('chartSection');
+  const statSec = document.getElementById('statSection');
+  const ctSec = document.getElementById('crosstabSection');
+  const wcSec = document.getElementById('wordcloudSection');
+
+  [chartSec, statSec, ctSec, wcSec].forEach(el => el.style.display = 'none');
+  errEl.style.display = 'none';
+
+  if (errMsg) {
+    errEl.textContent = errMsg;
+    errEl.style.display = '';
+    card.style.display = '';
+    return;
+  }
+  if (!data) { card.style.display = 'none'; return; }
+
+  card.style.display = '';
+  if (data.type === 'stat') {
+    document.getElementById('statValue').textContent = data.value;
+    document.getElementById('statLabel').textContent = data.label + ' — ' + data.column;
+    statSec.style.display = '';
+  } else if (data.type === 'crosstab') {
+    document.getElementById('crosstabTitle').textContent = data.title || '';
+    ctSec.style.display = '';
+  } else if (data.type === 'wordcloud') {
+    document.getElementById('wordcloudTitle').textContent = data.title || '';
+    wcSec.style.display = '';
+  } else {
+    document.getElementById('chartTitle').textContent = data.title || '';
+    chartSec.style.display = '';
+  }
+}
+
+function renderChart(data) {
+  const COLORS = ['#0d6efd','#198754','#ffc107','#dc3545','#6f42c1','#20c997','#fd7e14','#0dcaf0'];
+  const canvas = document.getElementById('analysisChart');
+  if (!canvas) return;
+
+  if (data.type === 'crosstab') {
+    const ct = document.getElementById('crosstabContainer');
+    let html = '<table class="table table-sm table-bordered small"><thead><tr><th></th>';
+    data.columns.forEach(c => html += `<th>${c}</th>`);
+    html += '</tr></thead><tbody>';
+    data.index.forEach((row, i) => {
+      html += `<tr><th>${row}</th>`;
+      data.data[i].forEach(v => html += `<td>${v}</td>`);
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    ct.innerHTML = html;
+    return;
+  }
+  if (data.type === 'wordcloud') {
+    if (data.image_b64) {
+      document.getElementById('wordcloudImg').src = 'data:image/png;base64,' + data.image_b64;
+    }
+    const topEl = document.getElementById('wordcloudTopWords');
+    topEl.innerHTML = (data.top_words || []).slice(0, 15).map((w, i) =>
+      `<div class="d-flex justify-content-between align-items-center mb-1">
+        <span class="small">${i+1}. ${w.word}</span>
+        <span class="badge bg-secondary">${w.count}</span>
+      </div>`
+    ).join('');
+    return;
+  }
+  if (data.type === 'stat') return;
+
+  const ctx = canvas.getContext('2d');
+  if (data.type === 'pie') {
+    analysisChart = new Chart(ctx, {
+      type: 'pie',
+      data: {
+        labels: data.labels,
+        datasets: [{ data: data.data, backgroundColor: data.labels.map((_,i) => COLORS[i%COLORS.length]) }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+    });
+  } else if (data.type === 'bar') {
+    analysisChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: data.labels,
+        datasets: [{ label: data.y_label || '數量', data: data.data, backgroundColor: '#0d6efd99', borderColor: '#0d6efd', borderWidth: 1 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+    });
+  } else if (data.type === 'scatter') {
+    analysisChart = new Chart(ctx, {
+      type: 'scatter',
+      data: { datasets: [{ label: data.title, data: data.data, backgroundColor: '#0d6efd99', pointRadius: 6 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { title: { display: true, text: data.x_label } },
+          y: { title: { display: true, text: data.y_label } }
+        }
+      }
+    });
+  }
+}
+
+function csvAnalysis() {
+  return {
+    xCol: '', yCol: '', chartType: '',
+    uploading: false, uploadErr: '',
+    analyzing: false,
+
+    init() {
+      if (DATASET_ID) this.loadPreview();
+    },
+
+    selectColumn(name) {
+      this.xCol = name;
+    },
+
+    async uploadCSV(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      this.uploading = true;
+      this.uploadErr = '';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const r = await fetch('/api/csv/upload', { method: 'POST', body: fd });
+        const data = await r.json();
+        if (r.ok) {
+          window.location.href = `/admin/analysis/${data.dataset_id}`;
+        } else {
+          this.uploadErr = data.detail || '上傳失敗';
+        }
+      } catch(e) {
+        this.uploadErr = '網路錯誤：' + e.message;
+      }
+      this.uploading = false;
+    },
+
+    async loadPreview() {
+      try {
+        const r = await fetch(`/api/csv/${DATASET_ID}/preview`);
+        if (!r.ok) throw new Error('載入失敗 HTTP ' + r.status);
+        const data = await r.json();
+        document.getElementById('previewLoading').style.display = 'none';
+        document.getElementById('previewTable').style.display = '';
+        document.getElementById('previewHead').innerHTML =
+          '<tr>' + data.columns.map(c => `<th>${c}</th>`).join('') + '</tr>';
+        document.getElementById('previewBody').innerHTML = data.rows.map(row =>
+          '<tr>' + row.map(v => `<td>${v ?? ''}</td>`).join('') + '</tr>'
+        ).join('');
+      } catch(e) {
+        document.getElementById('previewLoading').innerHTML =
+          `<div class="text-danger small"><i class="bi bi-exclamation-circle me-1"></i>預覽載入失敗：${e.message}</div>`;
+      }
+    },
+
+    async runAnalysis() {
+      if (!this.xCol || !this.chartType) return;
+      this.analyzing = true;
+      showResult(null, '');
+      if (analysisChart) { analysisChart.destroy(); analysisChart = null; }
+
+      try {
+        const r = await fetch(`/api/csv/${DATASET_ID}/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chart_type: this.chartType, x_column: this.xCol, y_column: this.yCol || null }),
+        });
+        let data;
+        try { data = await r.json(); } catch(_) { throw new Error('伺服器錯誤 HTTP ' + r.status); }
+        if (!r.ok || data.error) {
+          showResult(null, data.detail || data.error || '伺服器錯誤');
+        } else {
+          showResult(data, '');
+          renderChart(data);
+        }
+      } catch(e) {
+        showResult(null, '分析失敗：' + e.message);
+      }
+      this.analyzing = false;
+    },
+  };
+}
+
+async function deleteDataset(id) {
+  const r = await fetch(`/api/csv/${id}`, { method: 'DELETE' });
+  if (r.ok) window.location.href = '/admin/analysis';
+  else alert('刪除失敗');
+}
+</script>
+{% endblock %}

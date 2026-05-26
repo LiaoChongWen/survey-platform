@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}QR Code — {{ form.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h4 class="fw-bold mb-0"><i class="bi bi-qr-code me-2 text-primary"></i>QR Code 發布</h4>
+    <div class="d-flex gap-2">
+      <a href="/admin/forms/{{ form.form_id }}/results" class="btn btn-outline-primary btn-sm">
+        <i class="bi bi-bar-chart-line me-1"></i>查看結果
+      </a>
+      <a href="/admin/forms" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-arrow-left me-1"></i>返回
+      </a>
+    </div>
+  </div>
+
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      <div class="card form-card p-4 text-center mb-4">
+        <h5 class="fw-bold mb-1">{{ form.title }}</h5>
+        <span class="badge badge-status-{{ form.status }} mb-3">
+          {% if form.status == 'draft' %}草稿
+          {% elif form.status == 'open' %}開放中
+          {% else %}已關閉{% endif %}
+        </span>
+
+        <div class="qr-container mb-3">
+          <img src="data:image/png;base64,{{ qr_b64 }}"
+               alt="QR Code" style="max-width:280px; border-radius:8px;"
+               id="qrImg">
+        </div>
+
+        <div class="input-group mb-3">
+          <input type="text" class="form-control text-center" id="formUrl"
+                 value="{{ form_url }}" readonly>
+          <button class="btn btn-outline-secondary" onclick="copyUrl()" title="複製連結">
+            <i class="bi bi-clipboard" id="clipIcon"></i>
+          </button>
+        </div>
+
+        <div class="d-flex gap-2 justify-content-center flex-wrap">
+          <a href="/admin/forms/{{ form.form_id }}/edit" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-pencil me-1"></i>編輯問卷
+          </a>
+          <button class="btn btn-primary btn-sm" onclick="downloadQR()">
+            <i class="bi bi-download me-1"></i>下載 QR Code
+          </button>
+          <a href="{{ form_url }}" target="_blank" class="btn btn-success btn-sm">
+            <i class="bi bi-box-arrow-up-right me-1"></i>在新視窗開啟
+          </a>
+        </div>
+      </div>
+
+      <!-- Full-screen projection hint -->
+      <div class="card form-card p-3 text-center bg-light">
+        <p class="mb-2 text-muted small">
+          <i class="bi bi-fullscreen me-1"></i>
+          按下 F11 或將此頁面投影，方便學生掃描
+        </p>
+        <div class="form-check form-switch d-inline-block">
+          <input class="form-check-input" type="checkbox" id="bigMode" onchange="toggleBigMode(this)">
+          <label class="form-check-label small" for="bigMode">大圖模式（移除頁面其他內容）</label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function copyUrl() {
+  const url = document.getElementById('formUrl').value;
+  navigator.clipboard.writeText(url).then(() => {
+    const icon = document.getElementById('clipIcon');
+    icon.className = 'bi bi-check2';
+    setTimeout(() => { icon.className = 'bi bi-clipboard'; }, 2000);
+  });
+}
+
+function downloadQR() {
+  const img = document.getElementById('qrImg');
+  const a = document.createElement('a');
+  a.href = img.src;
+  a.download = '{{ form.title }}_QRCode.png';
+  a.click();
+}
+
+function toggleBigMode(cb) {
+  if (cb.checked) {
+    document.querySelector('.navbar').style.display = 'none';
+    document.querySelector('.card.bg-light').style.display = 'none';
+    document.querySelector('.input-group').style.display = 'none';
+    document.querySelector('.d-flex.gap-2.justify-content-center').style.display = 'none';
+    document.querySelector('.qr-container img').style.maxWidth = '90vmin';
+  } else {
+    location.reload();
+  }
+}
+</script>
+{% endblock %}
